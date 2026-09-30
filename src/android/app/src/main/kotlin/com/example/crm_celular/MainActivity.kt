@@ -1,5 +1,0 @@
-package com.example.crm_celular
-
-import io.flutter.embedding.android.FlutterActivity
-
-class MainActivity : FlutterActivity()
