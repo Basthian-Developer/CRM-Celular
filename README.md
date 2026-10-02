@@ -24,5 +24,26 @@ La aplicación utiliza actualmente la API desplegada en Vercel:
 
 `https://portafolio-basthianf.vercel.app/api/`
 
-La URL local `http://localhost:8000/api/` queda comentada en
-`lib/services/api_service.dart` para usarla durante el desarrollo local.
+La sección **Solicitudes** obtiene los registros de consultas desde Vercel:
+
+`https://portafolio-basthianf.vercel.app/api/consultas/getall`
+
+Para crear una solicitud utiliza:
+
+`https://portafolio-basthianf.vercel.app/api/consultas/crear`
+
+Para editar una solicitud existente:
+
+`PATCH https://portafolio-basthianf.vercel.app/api/consultas/editar/{id}`
+
+Para desactivar una solicitud:
+
+`PATCH https://portafolio-basthianf.vercel.app/api/consultas/desactivar/{id}`
+
+Para consultar una solicitud individual:
+
+`GET https://portafolio-basthianf.vercel.app/api/consultas/getbyid/{id}`
+
+Los valores de `plan` son numéricos: `1` Básico, `2` Pro y `3` Avanzado.
+
+Las URLs locales quedan comentadas en `lib/services/api_service.dart` para desarrollo local.
