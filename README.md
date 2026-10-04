@@ -20,11 +20,13 @@ flutter pub get
 flutter run
 ```
 
-La aplicación utiliza actualmente la API desplegada en Vercel:
+La aplicación está configurada para utilizar la API de producción desplegada en Vercel:
 
 `https://portafolio-basthianf.vercel.app/api/`
 
-La sección **Solicitudes** obtiene los registros de consultas desde Vercel:
+Las URLs de desarrollo local quedan comentadas en `lib/services/api_service.dart`.
+
+La sección **Solicitudes** obtiene únicamente consultas activas (`estado = true`):
 
 `https://portafolio-basthianf.vercel.app/api/consultas/getall`
 
@@ -46,4 +48,15 @@ Para consultar una solicitud individual:
 
 Los valores de `plan` son numéricos: `1` Básico, `2` Pro y `3` Avanzado.
 
-Las URLs locales quedan comentadas en `lib/services/api_service.dart` para desarrollo local.
+## Proyectos
+
+La sección **Proyectos** utiliza estos endpoints de producción:
+
+- `POST https://portafolio-basthianf.vercel.app/api/proyectos/crear`
+- `GET https://portafolio-basthianf.vercel.app/api/proyectos/getall`
+- `GET https://portafolio-basthianf.vercel.app/api/proyectos/getbyid/{id}`
+- `PUT https://portafolio-basthianf.vercel.app/api/proyectos/editar/{id}`
+
+La desactivación se realiza con `PUT https://portafolio-basthianf.vercel.app/api/proyectos/editar/{id}` y el cuerpo `{"estado": false}`.
+
+También incluye un panel para enviar solicitudes HTTP manuales y consultar la respuesta.

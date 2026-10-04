@@ -3,7 +3,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../controllers/api_controller.dart';
 import '../controllers/consultations_controller.dart';
+import '../controllers/logs_controller.dart';
+import '../controllers/projects_controller.dart';
 import '../models/api_response.dart';
+import '../models/project.dart';
 import '../models/service_request.dart';
 import '../services/api_service.dart';
 
@@ -12,13 +15,6 @@ const _surface = Color(0xFF171717);
 const _surfaceSoft = Color(0xFF202020);
 const _gold = Color(0xFFD4AF37);
 const _muted = Color(0xFF9A9A9A);
-
-const _recentApis = [
-  ('Portafolio personal', 'portafolio-basthianf.vercel.app', 'Hace 10 min', Icons.language_rounded),
-  ('API del CRM', 'portafolio-basthianf.vercel.app/api/', 'Hace 35 min', Icons.api_rounded),
-  ('Panel de clientes', 'clientes.miweb.cl', 'Ayer, 18:20', Icons.dashboard_customize_outlined),
-  ('Formulario de contacto', 'contacto.miweb.cl', 'Ayer, 15:42', Icons.contact_mail_outlined),
-];
 
 class HomeView extends StatefulWidget {
   const HomeView({required this.apiService, super.key});
@@ -32,19 +28,26 @@ class HomeView extends StatefulWidget {
 class _HomeViewState extends State<HomeView> {
   late final ApiController _controller;
   late final ConsultationsController _consultationsController;
+  late final LogsController _logsController;
+  late final ProjectsController _projectsController;
   int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
+    _logsController = LogsController();
     _controller = ApiController(apiService: widget.apiService);
-    _consultationsController = ConsultationsController(apiService: widget.apiService);
+    _consultationsController = ConsultationsController(apiService: widget.apiService, onLog: _logsController.add);
+    _projectsController = ProjectsController(apiService: widget.apiService, onLog: _logsController.add);
     _consultationsController.cargarConsultas();
+    _projectsController.loadProjects();
   }
 
   @override
   void dispose() {
     _consultationsController.dispose();
+    _projectsController.dispose();
+    _logsController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -52,7 +55,7 @@ class _HomeViewState extends State<HomeView> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([_controller, _consultationsController]),
+      animation: Listenable.merge([_controller, _consultationsController, _projectsController, _logsController]),
       builder: (context, child) {
         return Scaffold(
           backgroundColor: _background,
@@ -96,9 +99,9 @@ class _HomeViewState extends State<HomeView> {
           const SizedBox(height: 12),
           _buildMetrics(),
           const SizedBox(height: 24),
-          _buildSectionTitle('APIs usadas recientemente', 'Ver todas'),
+          _buildSectionTitle('Proyectos recientes', 'Ver todos'),
           const SizedBox(height: 12),
-          _buildRecentApisPreview(),
+          _buildRecentProjectsPreview(),
           const SizedBox(height: 24),
           _buildSyncCard(apiResponse),
         ],
@@ -137,18 +140,26 @@ class _HomeViewState extends State<HomeView> {
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: _gold.withValues(alpha: 0.45)),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [Icon(Icons.insights_rounded, color: _gold, size: 20), SizedBox(width: 8), Text('RESUMEN DE HOY', style: TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.2))]),
+          Row(children: [Icon(Icons.folder_copy_outlined, color: _gold, size: 20), SizedBox(width: 8), Text('CRM EVOLUTION', style: TextStyle(color: _gold, fontSize: 12, fontWeight: FontWeight.w800, letterSpacing: 1.2))]),
           SizedBox(height: 18),
-          Text('24', style: TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.w800)),
-          SizedBox(height: 2),
-          Text('seguimientos pendientes', style: TextStyle(color: Color(0xFFD9D0B5), fontSize: 14)),
+          Text('Proyectos', style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800)),
+          SizedBox(height: 5),
+          Text('Administra los proyectos de tu portafolio', style: TextStyle(color: Color(0xFFD9D0B5), fontSize: 14)),
           SizedBox(height: 18),
-          ClipRRect(borderRadius: BorderRadius.all(Radius.circular(10)), child: LinearProgressIndicator(value: 0.68, minHeight: 7, backgroundColor: Color(0x664B411D), color: _gold)),
-          SizedBox(height: 9),
-          Text('68% completado esta semana', style: TextStyle(color: _muted, fontSize: 12)),
+          Row(
+            children: [
+              Expanded(child: Text('${_projectsController.projects.length} proyectos registrados', style: const TextStyle(color: _muted, fontSize: 12))),
+              FilledButton.icon(
+                onPressed: () => setState(() => _selectedIndex = 2),
+                icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                label: const Text('Abrir'),
+                style: FilledButton.styleFrom(backgroundColor: _gold, foregroundColor: Colors.black),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -196,32 +207,169 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
-  Widget _buildRecentApisPreview() {
-    return Column(children: [_apiTile(_recentApis[0]), _apiTile(_recentApis[1])]);
+  Widget _buildRecentProjectsPreview() {
+    return Column(
+      children: [for (final project in _projectsController.projects.take(2)) _projectTile(project)],
+    );
   }
 
   Widget _buildApisView() {
     return _pageScaffold(
       title: 'APIs',
-      subtitle: 'Páginas y servicios usados recientemente',
-      child: Column(children: [for (final api in _recentApis) _apiTile(api, showChevron: true)]),
+      subtitle: 'Conecta y administra los recursos de tu CRM',
+      child: Column(
+        children: [
+          _apiProjectCard(),
+          const SizedBox(height: 22),
+          _manualRequestPanel(),
+        ],
+      ),
     );
   }
 
-  Widget _apiTile((String, String, String, IconData) api, {bool showChevron = false}) {
+  Widget _apiProjectCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [Color(0xFF3D3211), Color(0xFF1F1A0B)]),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _gold.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(color: _gold.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(14)),
+                child: const Icon(Icons.folder_copy_outlined, color: _gold),
+              ),
+              const SizedBox(width: 13),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Proyectos', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+                    SizedBox(height: 4),
+                    Text('Gestiona los proyectos de tu portafolio', style: TextStyle(color: _muted, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(child: Text('${_projectsController.projects.length} proyectos disponibles', style: const TextStyle(color: Color(0xFFD9D0B5), fontSize: 12))),
+              FilledButton.icon(
+                onPressed: _openProjectsManagement,
+                icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                label: const Text('Abrir'),
+                style: FilledButton.styleFrom(backgroundColor: _gold, foregroundColor: Colors.black),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProjectsView() {
+    final state = _projectsController;
+    return _pageScaffold(
+      title: 'Proyectos',
+      subtitle: 'Administra los proyectos de tu portafolio',
+      action: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(onPressed: state.isLoading ? null : state.loadProjects, icon: const Icon(Icons.refresh_rounded, color: _gold), tooltip: 'Recargar proyectos'),
+          IconButton(onPressed: _openCreateProject, icon: const Icon(Icons.add_rounded, color: _gold), tooltip: 'Agregar proyecto'),
+        ],
+      ),
+      child: Column(
+        children: [
+          if (state.isLoading) const Padding(padding: EdgeInsets.all(35), child: CircularProgressIndicator(color: _gold)),
+          if (!state.isLoading && state.errorMessage != null) _projectError(state.errorMessage!),
+          if (!state.isLoading && state.errorMessage == null && state.projects.isEmpty) _emptyProjects(),
+          if (!state.isLoading && state.errorMessage == null) for (final project in state.projects) _projectCard(project),
+        ],
+      ),
+    );
+  }
+
+  Widget _projectTile(Project project) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(17)),
       child: Row(
         children: [
-          Container(width: 42, height: 42, decoration: BoxDecoration(color: _gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(13)), child: Icon(api.$4, color: _gold, size: 20)),
+          Container(width: 42, height: 42, decoration: BoxDecoration(color: _gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(13)), child: const Icon(Icons.folder_open_outlined, color: _gold, size: 20)),
           const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(api.$1, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)), const SizedBox(height: 4), Text(api.$2, style: const TextStyle(color: _muted, fontSize: 11)), const SizedBox(height: 4), Text(api.$3, style: const TextStyle(color: Color(0xFF6F6F6F), fontSize: 10))])),
-          if (showChevron) const Icon(Icons.chevron_right_rounded, color: _muted),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(project.name ?? 'Proyecto sin nombre', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700)), const SizedBox(height: 4), Text(project.githubUrl, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _muted, fontSize: 11))])),
+          const Icon(Icons.chevron_right_rounded, color: _muted),
         ],
       ),
     );
+  }
+
+  Widget _projectCard(Project project) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(19), border: Border.all(color: const Color(0xFF292929))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [Expanded(child: Text(project.name ?? 'Proyecto sin nombre', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700))), if (project.isActive == false) _projectStatus('Inactivo')]),
+        const SizedBox(height: 8),
+        Text(project.description ?? 'Sin descripción disponible.', style: const TextStyle(color: _muted, fontSize: 13, height: 1.4)),
+        if (project.tags?.isNotEmpty == true) ...[const SizedBox(height: 12), Wrap(spacing: 6, runSpacing: 6, children: [for (final tag in project.tags!) _tag(tag)])],
+        const SizedBox(height: 15),
+        Row(children: [Expanded(child: OutlinedButton.icon(onPressed: () => _openEditProject(project), icon: const Icon(Icons.edit_outlined, size: 17), label: const Text('Editar'))), const SizedBox(width: 10), Expanded(child: TextButton.icon(onPressed: project.isActive == false ? null : () => _deactivateProject(project), icon: const Icon(Icons.block_outlined, size: 17), label: const Text('Desactivar')))]),
+      ]),
+    );
+  }
+
+  Widget _tag(String value) => Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5), decoration: BoxDecoration(color: _gold.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(20)), child: Text(value, style: const TextStyle(color: _gold, fontSize: 10)));
+
+  Widget _projectStatus(String label) => Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5), decoration: BoxDecoration(color: const Color(0xFF522222), borderRadius: BorderRadius.circular(20)), child: Text(label, style: const TextStyle(color: Color(0xFFFFAAA0), fontSize: 10)));
+
+  Widget _projectError(String message) => Container(width: double.infinity, padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(18)), child: Column(children: [const Icon(Icons.cloud_off_rounded, color: _gold, size: 28), const SizedBox(height: 10), Text(message, textAlign: TextAlign.center, style: const TextStyle(color: _muted, fontSize: 13)), const SizedBox(height: 12), OutlinedButton(onPressed: _projectsController.loadProjects, child: const Text('Reintentar'))]));
+
+  Widget _emptyProjects() => Container(width: double.infinity, padding: const EdgeInsets.all(28), decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(18)), child: const Column(children: [Icon(Icons.folder_off_outlined, color: _muted, size: 34), SizedBox(height: 12), Text('No hay proyectos disponibles.', style: TextStyle(color: _muted, fontSize: 14))]));
+
+  Widget _manualRequestPanel() => ManualApiRequestPanel(apiService: widget.apiService, logsController: _logsController);
+
+  void _openProjectsManagement() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: _background,
+          appBar: AppBar(
+            backgroundColor: _background,
+            foregroundColor: Colors.white,
+            title: const Text('Proyectos'),
+          ),
+          body: _buildProjectsView(),
+        ),
+      ),
+    );
+  }
+
+  void _openCreateProject() {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectFormView(controller: _projectsController)));
+  }
+
+  void _openEditProject(Project project) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ProjectFormView(controller: _projectsController, project: project)));
+  }
+
+  Future<void> _deactivateProject(Project project) async {
+    final error = await _projectsController.deactivateProject(project.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error ?? 'Proyecto desactivado correctamente.')));
   }
 
   Widget _buildRequestsView() {
@@ -334,7 +482,7 @@ class _HomeViewState extends State<HomeView> {
   }
 
   void _openRequestDetails(ServiceRequest request) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => RequestDetailsView(request: request)));
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => RequestDetailsView(request: request, controller: _consultationsController)));
   }
 
   void _openCreateRequest() {
@@ -371,9 +519,20 @@ class _HomeViewState extends State<HomeView> {
     return _pageScaffold(
       title: 'Ajustes',
       subtitle: 'Preferencias de tu CRM personal',
-      child: Column(children: [_settingsTile(Icons.person_outline_rounded, 'Perfil', 'Gestiona tus datos personales'), _settingsTile(Icons.notifications_none_rounded, 'Notificaciones', 'Configura tus recordatorios'), _settingsTile(Icons.palette_outlined, 'Apariencia', 'Tema oscuro premium')]),
+      child: Column(children: [_settingsTile(Icons.person_outline_rounded, 'Perfil', 'Gestiona tus datos personales'), _settingsTile(Icons.notifications_none_rounded, 'Notificaciones', 'Configura tus recordatorios'), _settingsTile(Icons.palette_outlined, 'Apariencia', 'Tema oscuro premium'), const SizedBox(height: 20), _buildLogsSection()]),
     );
   }
+
+  Widget _buildLogsSection() {
+    final logs = _logsController.logs;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [const Expanded(child: Text('Log de actividad', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700))), TextButton(onPressed: logs.isEmpty ? null : _logsController.clear, child: const Text('Limpiar'))]),
+      const SizedBox(height: 10),
+      Container(width: double.infinity, padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(17)), child: logs.isEmpty ? const Text('Todavía no hay operaciones registradas.', style: TextStyle(color: _muted, fontSize: 12)) : Column(children: [for (final log in logs.take(12)) ListTile(contentPadding: EdgeInsets.zero, dense: true, leading: const Icon(Icons.terminal_rounded, color: _gold, size: 18), title: Text(log.message, style: const TextStyle(color: Colors.white, fontSize: 12)), subtitle: Text(_logTime(log.createdAt), style: const TextStyle(color: _muted, fontSize: 10)))])),
+    ]);
+  }
+
+  String _logTime(DateTime time) => '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}:${time.second.toString().padLeft(2, '0')}';
 
   Widget _settingsTile(IconData icon, String title, String subtitle) {
     return Container(margin: const EdgeInsets.only(bottom: 10), child: ListTile(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), tileColor: _surface, leading: Icon(icon, color: _gold), title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)), subtitle: Text(subtitle, style: const TextStyle(color: _muted, fontSize: 12)), trailing: const Icon(Icons.chevron_right_rounded, color: _muted)));
@@ -416,9 +575,10 @@ class _HomeViewState extends State<HomeView> {
 }
 
 class RequestDetailsView extends StatelessWidget {
-  const RequestDetailsView({required this.request, super.key});
+  const RequestDetailsView({required this.request, required this.controller, super.key});
 
   final ServiceRequest request;
+  final ConsultationsController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -495,7 +655,7 @@ class RequestDetailsView extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: () {},
+                    onPressed: () => _deactivate(context),
                     icon: const Icon(Icons.close_rounded),
                     label: const Text('Rechazar'),
                   ),
@@ -530,6 +690,16 @@ class RequestDetailsView extends StatelessWidget {
     }
   }
 
+  Future<void> _deactivate(BuildContext context) async {
+    final error = await controller.desactivarConsulta(request.id);
+    if (!context.mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    Navigator.of(context).pop();
+  }
+
   Widget _statusBadge(ServiceRequest request) {
     return Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: _gold.withValues(alpha: 0.13), borderRadius: BorderRadius.circular(20)), child: Text(request.priority.toUpperCase(), style: const TextStyle(color: _gold, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 1)));
   }
@@ -552,6 +722,8 @@ class _CreateRequestViewState extends State<CreateRequestView> {
   final _phoneController = TextEditingController();
   final _planController = TextEditingController(text: '1');
   final _problemController = TextEditingController();
+  final _startDateController = TextEditingController();
+  final _endDateController = TextEditingController();
 
   String _priority = 'Normal';
   bool _isActive = true;
@@ -574,6 +746,8 @@ class _CreateRequestViewState extends State<CreateRequestView> {
       _isActive = request.isActive;
       _startDate = _parseDate(request.startDate);
       _endDate = _parseDate(request.endDate);
+      if (_startDate != null) _startDateController.text = _formatDate(_startDate!);
+      if (_endDate != null) _endDateController.text = _formatDate(_endDate!);
     }
   }
 
@@ -584,6 +758,8 @@ class _CreateRequestViewState extends State<CreateRequestView> {
     _phoneController.dispose();
     _planController.dispose();
     _problemController.dispose();
+    _startDateController.dispose();
+    _endDateController.dispose();
     super.dispose();
   }
 
@@ -618,9 +794,9 @@ class _CreateRequestViewState extends State<CreateRequestView> {
                 const SizedBox(height: 14),
                 _textField(_problemController, 'Problema o encargo', Icons.description_outlined, maxLines: 5),
                 const SizedBox(height: 14),
-                _dateField('Plazo inicial', _startDate, (date) => setState(() => _startDate = date)),
+                _dateField('Plazo inicial', _startDate, _startDateController, (date) => setState(() => _startDate = date)),
                 const SizedBox(height: 14),
-                _dateField('Plazo final', _endDate, (date) => setState(() => _endDate = date)),
+                _dateField('Plazo final', _endDate, _endDateController, (date) => setState(() => _endDate = date)),
                 const SizedBox(height: 14),
                 _dropdown<String>('Prioridad', _priority, ['Baja', 'Normal', 'Alta', 'Urgente'], (value) => setState(() => _priority = value!), (value) => value),
                 const SizedBox(height: 8),
@@ -681,10 +857,10 @@ class _CreateRequestViewState extends State<CreateRequestView> {
     );
   }
 
-  Widget _dateField(String label, DateTime? date, ValueChanged<DateTime> onSelected) {
+  Widget _dateField(String label, DateTime? date, TextEditingController controller, ValueChanged<DateTime> onSelected) {
     return TextFormField(
       readOnly: true,
-      initialValue: date == null ? '' : _formatDate(date),
+      controller: controller,
       style: const TextStyle(color: Colors.white, fontSize: 14),
       decoration: _inputDecoration(label, Icons.calendar_today_outlined).copyWith(suffixIcon: const Icon(Icons.expand_more_rounded, color: _muted)),
       onTap: () async {
@@ -695,7 +871,10 @@ class _CreateRequestViewState extends State<CreateRequestView> {
           lastDate: DateTime(2100),
           builder: (context, child) => Theme(data: Theme.of(context).copyWith(colorScheme: const ColorScheme.dark(primary: _gold, surface: _surface)), child: child!),
         );
-        if (selected != null) onSelected(selected);
+        if (selected != null) {
+          controller.text = _formatDate(selected);
+          onSelected(selected);
+        }
       },
     );
   }
@@ -747,4 +926,193 @@ class _CreateRequestViewState extends State<CreateRequestView> {
   String _formatApiDate(DateTime date) => '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
 
   DateTime? _parseDate(String? value) => value == null ? null : DateTime.tryParse(value);
+}
+
+class ProjectFormView extends StatefulWidget {
+  const ProjectFormView({required this.controller, this.project, super.key});
+
+  final ProjectsController controller;
+  final Project? project;
+
+  @override
+  State<ProjectFormView> createState() => _ProjectFormViewState();
+}
+
+class _ProjectFormViewState extends State<ProjectFormView> {
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _description = TextEditingController();
+  final _tags = TextEditingController();
+  final _github = TextEditingController();
+  final _demo = TextEditingController();
+  bool _featured = false;
+  bool _active = true;
+
+  bool get _editing => widget.project != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final project = widget.project;
+    if (project != null) {
+      _name.text = project.name ?? '';
+      _description.text = project.description ?? '';
+      _tags.text = project.tags?.join(', ') ?? '';
+      _github.text = project.githubUrl;
+      _demo.text = project.demoUrl ?? '';
+      _featured = project.featured ?? false;
+      _active = project.isActive ?? true;
+    }
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _description.dispose();
+    _tags.dispose();
+    _github.dispose();
+    _demo.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, child) => Scaffold(
+        backgroundColor: _background,
+        appBar: AppBar(backgroundColor: _background, foregroundColor: Colors.white, title: Text(_editing ? 'Editar proyecto' : 'Agregar proyecto')),
+        body: Form(
+          key: _formKey,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
+            children: [
+              Text(_editing ? 'Editar proyecto' : 'Nuevo proyecto', style: const TextStyle(color: Colors.white, fontSize: 27, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 7),
+              const Text('Información que aparecerá en tu portafolio.', style: TextStyle(color: _muted, fontSize: 14)),
+              const SizedBox(height: 25),
+              _field(_name, 'Nombre', Icons.title_rounded),
+              const SizedBox(height: 14),
+              _field(_description, 'Descripción', Icons.description_outlined, maxLines: 5),
+              const SizedBox(height: 14),
+              _field(_tags, 'Tags separados por coma', Icons.sell_outlined),
+              const SizedBox(height: 14),
+              _field(_github, 'URL de GitHub', Icons.code_rounded, required: true, keyboardType: TextInputType.url),
+              const SizedBox(height: 14),
+              _field(_demo, 'URL de demo', Icons.language_rounded, keyboardType: TextInputType.url),
+              SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Proyecto destacado', style: TextStyle(color: Colors.white)), value: _featured, activeColor: _gold, onChanged: (value) => setState(() => _featured = value)),
+              SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Proyecto activo', style: TextStyle(color: Colors.white)), value: _active, activeColor: _gold, onChanged: (value) => setState(() => _active = value)),
+              const SizedBox(height: 18),
+              SizedBox(height: 52, child: FilledButton.icon(onPressed: widget.controller.isSaving ? null : _save, icon: widget.controller.isSaving ? const SizedBox(width: 19, height: 19, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)) : const Icon(Icons.save_outlined), label: Text(widget.controller.isSaving ? 'Guardando...' : _editing ? 'Guardar cambios' : 'Agregar proyecto'))),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _field(TextEditingController controller, String label, IconData icon, {bool required = false, TextInputType? keyboardType, int maxLines = 1}) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      style: const TextStyle(color: Colors.white),
+      validator: (value) {
+        if (required && (value == null || value.trim().isEmpty)) {
+          return 'Este campo es obligatorio';
+        }
+        return null;
+      },
+      decoration: _decoration(label, icon),
+    );
+  }
+
+  InputDecoration _decoration(String label, IconData icon) => InputDecoration(labelText: label, labelStyle: const TextStyle(color: _muted), prefixIcon: Icon(icon, color: _gold, size: 20), filled: true, fillColor: _surface, border: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: BorderSide.none), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(15), borderSide: const BorderSide(color: _gold)));
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    final payload = {
+      'nombre': _name.text.trim().isEmpty ? null : _name.text.trim(),
+      'descripcion': _description.text.trim().isEmpty ? null : _description.text.trim(),
+      'tags': _tags.text.trim().isEmpty ? null : _tags.text.split(',').map((tag) => tag.trim()).where((tag) => tag.isNotEmpty).toList(),
+      'github_url': _github.text.trim(),
+      'demo_url': _demo.text.trim().isEmpty ? null : _demo.text.trim(),
+      'destacado': _featured,
+      'estado': _active,
+    };
+    final error = _editing ? await widget.controller.updateProject(widget.project!.id, payload) : await widget.controller.createProject(payload);
+    if (!mounted) return;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
+    Navigator.of(context).pop();
+  }
+}
+
+class ManualApiRequestPanel extends StatefulWidget {
+  const ManualApiRequestPanel({required this.apiService, required this.logsController, super.key});
+
+  final ApiService apiService;
+  final LogsController logsController;
+
+  @override
+  State<ManualApiRequestPanel> createState() => _ManualApiRequestPanelState();
+}
+
+class _ManualApiRequestPanelState extends State<ManualApiRequestPanel> {
+  final _url = TextEditingController(text: 'https://portafolio-basthianf.vercel.app/api/proyectos/getall');
+  final _body = TextEditingController(text: '{}');
+  String _method = 'GET';
+  String _response = 'La respuesta aparecerá aquí.';
+  bool _loading = false;
+
+  @override
+  void dispose() {
+    _url.dispose();
+    _body.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(17),
+      decoration: BoxDecoration(color: _surface, borderRadius: BorderRadius.circular(19), border: Border.all(color: const Color(0xFF292929))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Row(children: [Icon(Icons.terminal_rounded, color: _gold, size: 20), SizedBox(width: 8), Text('Solicitud manual', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700))]),
+        const SizedBox(height: 6),
+        const Text('Prueba cualquier endpoint de desarrollo.', style: TextStyle(color: _muted, fontSize: 12)),
+        const SizedBox(height: 16),
+        Row(children: [SizedBox(width: 105, child: DropdownButtonFormField<String>(value: _method, dropdownColor: _surfaceSoft, decoration: _manualDecoration('Método'), items: [for (final method in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) DropdownMenuItem(value: method, child: Text(method))], onChanged: (value) => setState(() => _method = value!))), const SizedBox(width: 10), Expanded(child: TextField(controller: _url, style: const TextStyle(color: Colors.white, fontSize: 12), decoration: _manualDecoration('URL')))]),
+        const SizedBox(height: 12),
+        TextField(controller: _body, maxLines: 5, style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 12), decoration: _manualDecoration('JSON body')),
+        const SizedBox(height: 12),
+        SizedBox(width: double.infinity, child: OutlinedButton.icon(onPressed: _loading ? null : _send, icon: _loading ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _gold)) : const Icon(Icons.send_rounded, size: 17), label: Text(_loading ? 'Enviando...' : 'Enviar solicitud'))),
+        const SizedBox(height: 16),
+        const Text('Respuesta', style: TextStyle(color: _muted, fontSize: 12, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 7),
+        Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(12)), child: SelectableText(_response, style: const TextStyle(color: Color(0xFFD5D5D5), fontFamily: 'monospace', fontSize: 11))),
+      ]),
+    );
+  }
+
+  InputDecoration _manualDecoration(String label) => InputDecoration(labelText: label, labelStyle: const TextStyle(color: _muted, fontSize: 12), filled: true, fillColor: _surfaceSoft, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12));
+
+  Future<void> _send() async {
+    setState(() {
+      _loading = true;
+      _response = 'Enviando...';
+    });
+    try {
+      final response = await widget.apiService.manualRequest(method: _method, url: _url.text.trim(), body: _method == 'GET' ? null : _body.text.trim());
+      setState(() => _response = 'HTTP ${response.statusCode}\n${response.body}');
+      widget.logsController.add('$_method ${_url.text.trim()} · ${response.statusCode}');
+    } catch (error) {
+      setState(() => _response = 'ERROR\n$error');
+      widget.logsController.add('$_method ${_url.text.trim()} · ERROR');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 }
